@@ -1,0 +1,99 @@
+# =============================================================
+#  QuickTask — docker-compose.yml
+#
+#  Fully compatible with both Docker Compose v2 and Podman
+#  Desktop (rootless containers). All services run on a
+#  dedicated bridge network; only the frontend is exposed to
+#  the host by default.
+#
+#  Usage:
+#    docker compose up --build        (Docker)
+#    podman-compose up --build        (Podman CLI)
+#    or via Podman Desktop "Play Kubernetes YAML" is NOT needed
+#    — just use Compose support in Podman Desktop ≥ 1.1.
+#
+#  Access:  http://localhost:8080
+# =============================================================
+
+services:
+
+  # -----------------------------------------------------------
+  # MySQL 8 — persistent storage
+  # -----------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: quicktask-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: taskdb
+      MYSQL_USER: taskuser
+      MYSQL_PASSWORD: taskpassword
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - quicktask-net
+    # Expose only for local tooling (DBeaver, etc.); not required by the app
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "root", "--password=rootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    restart: unless-stopped
+
+  # -----------------------------------------------------------
+  # Spring Boot backend
+  # -----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # image: names the locally-built image to match the CD-pushed registry tag.
+    # Set GITHUB_OWNER in your .env file (copy from .env.example).
+    image: ghcr.io/${GITHUB_OWNER:-your-github-username}/quicktask-backend:latest
+    container_name: quicktask-backend
+    environment:
+      DB_URL: "jdbc:mysql://mysql:3306/taskdb?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
+      DB_USERNAME: taskuser
+      DB_PASSWORD: taskpassword
+    networks:
+      - quicktask-net
+    # Expose for local debugging; the frontend reaches it via internal DNS
+    ports:
+      - "8081:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -----------------------------------------------------------
+  # Nginx frontend — serves SPA and proxies /api to backend
+  # -----------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: ghcr.io/${GITHUB_OWNER:-your-github-username}/quicktask-frontend:latest
+    container_name: quicktask-frontend
+    networks:
+      - quicktask-net
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# =============================================================
+# Named volumes & networks
+# =============================================================
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  quicktask-net:
+    driver: bridge

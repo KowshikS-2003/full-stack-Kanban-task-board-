@@ -1,0 +1,85 @@
+# =============================================================
+#  CI — Continuous Integration
+#
+#  Triggered on every Pull Request targeting `main`.
+#  Two parallel jobs:
+#    1. lint-frontend  — validates that all required static
+#                        assets exist and HTML is well-formed.
+#    2. test-backend   — compiles the Spring Boot project and
+#                        runs all unit tests against an H2
+#                        in-memory database (no MySQL needed).
+# =============================================================
+
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  # -----------------------------------------------------------
+  # Job 1: Lint / validate the frontend
+  # -----------------------------------------------------------
+  lint-frontend:
+    name: Lint Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify required frontend files exist
+        run: |
+          echo "Checking static assets..."
+          test -f frontend/index.html  && echo "  ✔ index.html"  || { echo "  ✗ index.html missing";  exit 1; }
+          test -f frontend/style.css   && echo "  ✔ style.css"   || { echo "  ✗ style.css missing";   exit 1; }
+          test -f frontend/app.js      && echo "  ✔ app.js"      || { echo "  ✗ app.js missing";      exit 1; }
+          test -f frontend/nginx.conf  && echo "  ✔ nginx.conf"  || { echo "  ✗ nginx.conf missing";  exit 1; }
+          test -f frontend/Dockerfile  && echo "  ✔ Dockerfile"  || { echo "  ✗ Dockerfile missing";  exit 1; }
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install htmlhint
+        run: npm install -g htmlhint
+
+      - name: Lint HTML
+        run: htmlhint frontend/index.html
+
+      - name: Check for console.error without surrounding try/catch (best-effort)
+        run: |
+          # Warn (don't fail) if bare console.error calls are found outside catch blocks
+          grep -n "console\.error" frontend/app.js || echo "No bare console.error calls found."
+
+  # -----------------------------------------------------------
+  # Job 2: Build & test the Spring Boot backend
+  # -----------------------------------------------------------
+  test-backend:
+    name: Test Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Run Spring Boot tests
+        working-directory: backend
+        run: mvn clean test -B
+
+      - name: Upload Surefire test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
