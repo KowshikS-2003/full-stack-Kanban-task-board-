@@ -288,15 +288,22 @@ body {
    =================================================== */
 
 .modal-overlay {
+    /* Hidden by default — display:flex here would override the [hidden]
+       attribute in the UA stylesheet, so we default to none and show
+       only when the .is-open class is present. */
+    display: none;
     position: fixed;
     inset: 0;
     background: rgba(15, 23, 42, 0.45);
-    display: flex;
     align-items: center;
     justify-content: center;
     z-index: 200;
     backdrop-filter: blur(3px);
     padding: 1rem;
+}
+
+.modal-overlay.is-open {
+    display: flex;
 }
 
 .modal {

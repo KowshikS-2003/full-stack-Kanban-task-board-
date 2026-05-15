@@ -197,12 +197,14 @@ const form     = document.getElementById('new-task-form');
 const titleInput = document.getElementById('task-title');
 
 function openModal() {
-    modal.hidden = false;
+    modal.classList.add('is-open');
+    modal.removeAttribute('hidden');   // sync for accessibility/screen readers
     titleInput.focus();
 }
 
 function closeModal() {
-    modal.hidden = true;
+    modal.classList.remove('is-open');
+    modal.setAttribute('hidden', ''); // sync for accessibility/screen readers
     form.reset();
     titleInput.classList.remove('invalid');
     clearError();
@@ -219,7 +221,7 @@ modal.addEventListener('click', e => {
 
 // Close on Escape key
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !modal.hidden) closeModal();
+    if (e.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
 });
 
 // -------------------------------------------------------
