@@ -26,23 +26,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 class TaskRepositoryTest {
 
+    private static final Long USER_A = 1L;
+    private static final Long USER_B = 2L;
+
     @Autowired
     private TestEntityManager entityManager;
 
     @Autowired
     private TaskRepository taskRepository;
 
-    // Helper: persist a Task and flush to DB immediately
+    // Helper: persist a Task for USER_A (default)
     private Task persist(String title, String description, Status status) {
-        return persist(title, description, status, Priority.MEDIUM);
+        return persist(title, description, status, Priority.MEDIUM, USER_A);
     }
 
     private Task persist(String title, String description, Status status, Priority priority) {
+        return persist(title, description, status, priority, USER_A);
+    }
+
+    private Task persist(String title, String description, Status status, Priority priority, Long userId) {
         Task t = new Task();
         t.setTitle(title);
         t.setDescription(description);
         t.setStatus(status);
         t.setPriority(priority);
+        t.setUserId(userId);
         return entityManager.persistFlushFind(t);
     }
 
@@ -67,6 +75,7 @@ class TaskRepositoryTest {
             task.setTitle("Persist me");
             task.setStatus(Status.TODO);
             task.setPriority(Priority.HIGH);
+            task.setUserId(USER_A);
 
             Task saved = taskRepository.save(task);
             entityManager.flush();
@@ -77,6 +86,7 @@ class TaskRepositoryTest {
             assertThat(found.get().getTitle()).isEqualTo("Persist me");
             assertThat(found.get().getStatus()).isEqualTo(Status.TODO);
             assertThat(found.get().getPriority()).isEqualTo(Priority.HIGH);
+            assertThat(found.get().getUserId()).isEqualTo(USER_A);
         }
 
         @Test
@@ -85,6 +95,7 @@ class TaskRepositoryTest {
             Task task = new Task();
             task.setTitle("Timestamped task");
             task.setStatus(Status.TODO);
+            task.setUserId(USER_A);
 
             Task saved = taskRepository.save(task);
             entityManager.flush();
@@ -108,6 +119,62 @@ class TaskRepositoryTest {
 
             List<Task> all = taskRepository.findAll();
             assertThat(all).hasSize(2);
+        }
+    }
+
+    // -------------------------------------------------------
+    // findByUserId (user isolation)
+    // -------------------------------------------------------
+
+    @Nested
+    @DisplayName("findByUserId()")
+    class FindByUserId {
+
+        @Test
+        @DisplayName("returns only tasks belonging to the given user")
+        void returnsOnlyUserTasks() {
+            persist("User A task 1", null, Status.TODO,        Priority.HIGH,   USER_A);
+            persist("User A task 2", null, Status.IN_PROGRESS, Priority.MEDIUM, USER_A);
+            persist("User B task",   null, Status.TODO,        Priority.LOW,    USER_B);
+
+            List<Task> resultA = taskRepository.findByUserId(USER_A);
+            assertThat(resultA).hasSize(2)
+                    .allMatch(t -> USER_A.equals(t.getUserId()));
+
+            List<Task> resultB = taskRepository.findByUserId(USER_B);
+            assertThat(resultB).hasSize(1)
+                    .allMatch(t -> USER_B.equals(t.getUserId()));
+        }
+
+        @Test
+        @DisplayName("returns empty list when user has no tasks")
+        void returnsEmptyWhenNoTasks() {
+            persist("Only for A", null, Status.TODO, Priority.LOW, USER_A);
+            assertThat(taskRepository.findByUserId(USER_B)).isEmpty();
+        }
+    }
+
+    // -------------------------------------------------------
+    // findByIdAndUserId (ownership check)
+    // -------------------------------------------------------
+
+    @Nested
+    @DisplayName("findByIdAndUserId()")
+    class FindByIdAndUserId {
+
+        @Test
+        @DisplayName("returns the task when id and userId match")
+        void returnsTaskForOwner() {
+            Task saved = persist("My task", null, Status.TODO, Priority.MEDIUM, USER_A);
+            Optional<Task> found = taskRepository.findByIdAndUserId(saved.getId(), USER_A);
+            assertThat(found).isPresent();
+        }
+
+        @Test
+        @DisplayName("returns empty when the task belongs to a different user")
+        void returnsEmptyForNonOwner() {
+            Task saved = persist("A's task", null, Status.TODO, Priority.LOW, USER_A);
+            assertThat(taskRepository.findByIdAndUserId(saved.getId(), USER_B)).isEmpty();
         }
     }
 
@@ -154,81 +221,6 @@ class TaskRepositoryTest {
             assertThat(taskRepository.findByStatus(Status.TODO)).hasSize(2);
             assertThat(taskRepository.findByStatus(Status.IN_PROGRESS)).hasSize(1);
             assertThat(taskRepository.findByStatus(Status.DONE)).hasSize(3);
-        }
-    }
-
-    // -------------------------------------------------------
-    // delete
-    // -------------------------------------------------------
-
-    @Nested
-    @DisplayName("deleteById()")
-    class Delete {
-
-        @Test
-        @DisplayName("removes the task from the database")
-        void deletesTask() {
-            Task saved = persist("Delete me", null, Status.TODO);
-            Long id = saved.getId();
-
-            taskRepository.deleteById(id);
-            entityManager.flush();
-
-            assertThat(taskRepository.findById(id)).isEmpty();
-        }
-
-        @Test
-        @DisplayName("existsById returns false after deletion")
-        void existsByIdReturnsFalseAfterDeletion() {
-            Task saved = persist("Temp", null, Status.TODO);
-            Long id = saved.getId();
-
-            taskRepository.deleteById(id);
-            entityManager.flush();
-
-            assertThat(taskRepository.existsById(id)).isFalse();
-        }
-    }
-
-    // -------------------------------------------------------
-    // update (via save on managed entity)
-    // -------------------------------------------------------
-
-    @Nested
-    @DisplayName("update via save()")
-    class Update {
-
-        @Test
-        @DisplayName("updates title and status of an existing task")
-        void updatesTitleAndStatus() {
-            Task saved = persist("Original title", null, Status.TODO, Priority.LOW);
-
-            Task toUpdate = taskRepository.findById(saved.getId()).orElseThrow();
-            toUpdate.setTitle("Updated title");
-            toUpdate.setStatus(Status.IN_PROGRESS);
-            toUpdate.setPriority(Priority.HIGH);
-            taskRepository.save(toUpdate);
-            entityManager.flush();
-            entityManager.clear();
-
-            Task reloaded = taskRepository.findById(saved.getId()).orElseThrow();
-            assertThat(reloaded.getTitle()).isEqualTo("Updated title");
-            assertThat(reloaded.getStatus()).isEqualTo(Status.IN_PROGRESS);
-            assertThat(reloaded.getPriority()).isEqualTo(Priority.HIGH);
-        }
-
-        @Test
-        @DisplayName("count remains the same after an update (no duplicate rows)")
-        void countUnchangedAfterUpdate() {
-            Task saved = persist("One task", null, Status.TODO);
-            long before = taskRepository.count();
-
-            Task toUpdate = taskRepository.findById(saved.getId()).orElseThrow();
-            toUpdate.setTitle("Modified");
-            taskRepository.save(toUpdate);
-            entityManager.flush();
-
-            assertThat(taskRepository.count()).isEqualTo(before);
         }
     }
 
@@ -306,6 +298,81 @@ class TaskRepositoryTest {
             persist("Only low-todo", null, Status.TODO, Priority.LOW);
 
             assertThat(taskRepository.findByStatusAndPriority(Status.DONE, Priority.HIGH)).isEmpty();
+        }
+    }
+
+    // -------------------------------------------------------
+    // deleteById
+    // -------------------------------------------------------
+
+    @Nested
+    @DisplayName("deleteById()")
+    class Delete {
+
+        @Test
+        @DisplayName("removes the task from the database")
+        void deletesTask() {
+            Task saved = persist("Delete me", null, Status.TODO);
+            Long id = saved.getId();
+
+            taskRepository.deleteById(id);
+            entityManager.flush();
+
+            assertThat(taskRepository.findById(id)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("existsById returns false after deletion")
+        void existsByIdReturnsFalseAfterDeletion() {
+            Task saved = persist("Temp", null, Status.TODO);
+            Long id = saved.getId();
+
+            taskRepository.deleteById(id);
+            entityManager.flush();
+
+            assertThat(taskRepository.existsById(id)).isFalse();
+        }
+    }
+
+    // -------------------------------------------------------
+    // update (via save on managed entity)
+    // -------------------------------------------------------
+
+    @Nested
+    @DisplayName("update via save()")
+    class Update {
+
+        @Test
+        @DisplayName("updates title, status and priority of an existing task")
+        void updatesTitleStatusAndPriority() {
+            Task saved = persist("Original title", null, Status.TODO, Priority.LOW, USER_A);
+
+            Task toUpdate = taskRepository.findById(saved.getId()).orElseThrow();
+            toUpdate.setTitle("Updated title");
+            toUpdate.setStatus(Status.IN_PROGRESS);
+            toUpdate.setPriority(Priority.HIGH);
+            taskRepository.save(toUpdate);
+            entityManager.flush();
+            entityManager.clear();
+
+            Task reloaded = taskRepository.findById(saved.getId()).orElseThrow();
+            assertThat(reloaded.getTitle()).isEqualTo("Updated title");
+            assertThat(reloaded.getStatus()).isEqualTo(Status.IN_PROGRESS);
+            assertThat(reloaded.getPriority()).isEqualTo(Priority.HIGH);
+        }
+
+        @Test
+        @DisplayName("count remains the same after an update (no duplicate rows)")
+        void countUnchangedAfterUpdate() {
+            Task saved = persist("One task", null, Status.TODO);
+            long before = taskRepository.count();
+
+            Task toUpdate = taskRepository.findById(saved.getId()).orElseThrow();
+            toUpdate.setTitle("Modified");
+            taskRepository.save(toUpdate);
+            entityManager.flush();
+
+            assertThat(taskRepository.count()).isEqualTo(before);
         }
     }
 }

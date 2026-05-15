@@ -42,6 +42,9 @@ public class Task {
     @Column(nullable = false, length = 10)
     private Priority priority = Priority.MEDIUM;
 
+    @Column(name = "user_id")
+    private Long userId;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -66,6 +69,9 @@ public class Task {
 
     public Priority getPriority() { return priority; }
     public void setPriority(Priority priority) { this.priority = priority; }
+
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.taskmanager.entity.Task;
 import com.taskmanager.entity.Task.Priority;
 import com.taskmanager.entity.Task.Status;
+import com.taskmanager.security.JwtUtil;
+import com.taskmanager.security.WithMockCustomUser;
 import com.taskmanager.service.TaskService;
+import com.taskmanager.service.UserService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -23,16 +26,21 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
  * MVC slice tests for TaskController.
- * Only the web layer is loaded (@WebMvcTest). TaskService is mocked.
- * No database or Spring Boot full context needed.
+ * Security is fully active; @WithMockCustomUser provides a CustomUserDetails principal.
+ * JwtAuthFilter skips when there is no Authorization header (shouldNotFilter=true).
+ * UserService is mocked because SecurityConfig depends on it.
  */
 @WebMvcTest(TaskController.class)
+@WithMockCustomUser          // applies to all test methods (userId=1, username="testuser")
 class TaskControllerTest {
+
+    private static final Long USER_ID = 1L;
 
     @Autowired
     private MockMvc mockMvc;
@@ -42,6 +50,20 @@ class TaskControllerTest {
 
     @MockBean
     private TaskService taskService;
+
+    /**
+     * UserService must be mocked so SecurityConfig (and DaoAuthenticationProvider)
+     * can be created in the web-test slice context.
+     */
+    @MockBean
+    private UserService userService;
+
+    /**
+     * JwtUtil must be mocked because JwtAuthFilter (picked up by SecurityConfig)
+     * requires it as a constructor dependency in the web slice context.
+     */
+    @MockBean
+    private JwtUtil jwtUtil;
 
     // Helper: build a populated Task (simulates a persisted entity)
     private Task task(Long id, String title, String description, Status status) {
@@ -55,6 +77,7 @@ class TaskControllerTest {
         t.setDescription(description);
         t.setStatus(status);
         t.setPriority(priority);
+        t.setUserId(USER_ID);
         t.setCreatedAt(LocalDateTime.of(2026, 1, 1, 9, 0));
         return t;
     }
@@ -70,7 +93,7 @@ class TaskControllerTest {
         @Test
         @DisplayName("returns 200 with a JSON array of tasks")
         void returns200WithTaskList() throws Exception {
-            given(taskService.getAllTasks()).willReturn(List.of(
+            given(taskService.getAllTasks(USER_ID)).willReturn(List.of(
                     task(1L, "Task A", null,      Status.TODO,        Priority.LOW),
                     task(2L, "Task B", "details", Status.IN_PROGRESS, Priority.HIGH)
             ));
@@ -89,9 +112,9 @@ class TaskControllerTest {
         }
 
         @Test
-        @DisplayName("returns 200 with an empty array when no tasks exist")
+        @DisplayName("returns 200 with an empty array when user has no tasks")
         void returns200EmptyList() throws Exception {
-            given(taskService.getAllTasks()).willReturn(List.of());
+            given(taskService.getAllTasks(USER_ID)).willReturn(List.of());
 
             mockMvc.perform(get("/api/tasks"))
                     .andExpect(status().isOk())
@@ -108,9 +131,9 @@ class TaskControllerTest {
     class GetTaskById {
 
         @Test
-        @DisplayName("returns 200 with the task when it exists")
+        @DisplayName("returns 200 with the task when it belongs to the user")
         void taskExists_returns200() throws Exception {
-            given(taskService.getTaskById(1L))
+            given(taskService.getTaskById(1L, USER_ID))
                     .willReturn(Optional.of(task(1L, "Found it", "desc", Status.DONE, Priority.HIGH)));
 
             mockMvc.perform(get("/api/tasks/1"))
@@ -123,9 +146,9 @@ class TaskControllerTest {
         }
 
         @Test
-        @DisplayName("returns 404 when task does not exist")
+        @DisplayName("returns 404 when task does not exist or belongs to another user")
         void taskMissing_returns404() throws Exception {
-            given(taskService.getTaskById(99L)).willReturn(Optional.empty());
+            given(taskService.getTaskById(99L, USER_ID)).willReturn(Optional.empty());
 
             mockMvc.perform(get("/api/tasks/99"))
                     .andExpect(status().isNotFound());
@@ -145,9 +168,10 @@ class TaskControllerTest {
         void returns201WithCreatedTask() throws Exception {
             Task input   = task(null, "New Task", "desc", Status.TODO, Priority.MEDIUM);
             Task created = task(5L,   "New Task", "desc", Status.TODO, Priority.MEDIUM);
-            given(taskService.createTask(any(Task.class))).willReturn(created);
+            given(taskService.createTask(any(Task.class), eq(USER_ID))).willReturn(created);
 
             mockMvc.perform(post("/api/tasks")
+                            .with(csrf())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(input)))
                     .andExpect(status().isCreated())
@@ -156,7 +180,7 @@ class TaskControllerTest {
                     .andExpect(jsonPath("$.status",   is("TODO")))
                     .andExpect(jsonPath("$.priority", is("MEDIUM")));
 
-            then(taskService).should().createTask(any(Task.class));
+            then(taskService).should().createTask(any(Task.class), eq(USER_ID));
         }
     }
 
@@ -169,14 +193,15 @@ class TaskControllerTest {
     class UpdateTask {
 
         @Test
-        @DisplayName("returns 200 with the updated task when it exists")
+        @DisplayName("returns 200 with the updated task when it belongs to the user")
         void taskExists_returns200() throws Exception {
             Task update  = task(null, "Updated", "new desc", Status.IN_PROGRESS, Priority.HIGH);
             Task updated = task(1L,   "Updated", "new desc", Status.IN_PROGRESS, Priority.HIGH);
-            given(taskService.updateTask(eq(1L), any(Task.class)))
+            given(taskService.updateTask(eq(1L), any(Task.class), eq(USER_ID)))
                     .willReturn(Optional.of(updated));
 
             mockMvc.perform(put("/api/tasks/1")
+                            .with(csrf())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(update)))
                     .andExpect(status().isOk())
@@ -187,12 +212,13 @@ class TaskControllerTest {
         }
 
         @Test
-        @DisplayName("returns 404 when task does not exist")
+        @DisplayName("returns 404 when task does not exist or belongs to another user")
         void taskMissing_returns404() throws Exception {
-            given(taskService.updateTask(eq(99L), any(Task.class)))
+            given(taskService.updateTask(eq(99L), any(Task.class), eq(USER_ID)))
                     .willReturn(Optional.empty());
 
             mockMvc.perform(put("/api/tasks/99")
+                            .with(csrf())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(
                                     task(null, "Ghost", null, Status.DONE, Priority.LOW))))
@@ -209,20 +235,20 @@ class TaskControllerTest {
     class DeleteTask {
 
         @Test
-        @DisplayName("returns 204 No Content when task exists")
+        @DisplayName("returns 204 No Content when task belongs to the user")
         void taskExists_returns204() throws Exception {
-            given(taskService.deleteTask(1L)).willReturn(true);
+            given(taskService.deleteTask(1L, USER_ID)).willReturn(true);
 
-            mockMvc.perform(delete("/api/tasks/1"))
+            mockMvc.perform(delete("/api/tasks/1").with(csrf()))
                     .andExpect(status().isNoContent());
         }
 
         @Test
-        @DisplayName("returns 404 when task does not exist")
+        @DisplayName("returns 404 when task does not exist or belongs to another user")
         void taskMissing_returns404() throws Exception {
-            given(taskService.deleteTask(99L)).willReturn(false);
+            given(taskService.deleteTask(99L, USER_ID)).willReturn(false);
 
-            mockMvc.perform(delete("/api/tasks/99"))
+            mockMvc.perform(delete("/api/tasks/99").with(csrf()))
                     .andExpect(status().isNotFound());
         }
     }

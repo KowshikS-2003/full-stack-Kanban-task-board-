@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.taskmanager.entity.Task;
+import com.taskmanager.security.CustomUserDetails;
 import com.taskmanager.service.TaskService;
 
 @RestController
@@ -28,36 +30,43 @@ public class TaskController {
         this.taskService = taskService;
     }
 
+    private Long userId(Authentication auth) {
+        return ((CustomUserDetails) auth.getPrincipal()).getUserId();
+    }
+
     @GetMapping
-    public List<Task> getAllTasks() {
-        return taskService.getAllTasks();
+    public List<Task> getAllTasks(Authentication auth) {
+        return taskService.getAllTasks(userId(auth));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Task> getTaskById(@PathVariable Long id) {
-        return taskService.getTaskById(id)
+    public ResponseEntity<Task> getTaskById(@PathVariable Long id, Authentication auth) {
+        return taskService.getTaskById(id, userId(auth))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
-    public ResponseEntity<Task> createTask(@RequestBody Task task) {
-        Task created = taskService.createTask(task);
+    public ResponseEntity<Task> createTask(@RequestBody Task task, Authentication auth) {
+        Task created = taskService.createTask(task, userId(auth));
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Task> updateTask(@PathVariable Long id, @RequestBody Task task) {
-        return taskService.updateTask(id, task)
+    public ResponseEntity<Task> updateTask(@PathVariable Long id,
+                                           @RequestBody Task task,
+                                           Authentication auth) {
+        return taskService.updateTask(id, task, userId(auth))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteTask(@PathVariable Long id) {
-        if (taskService.deleteTask(id)) {
+    public ResponseEntity<Void> deleteTask(@PathVariable Long id, Authentication auth) {
+        if (taskService.deleteTask(id, userId(auth))) {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.notFound().build();
     }
 }
+

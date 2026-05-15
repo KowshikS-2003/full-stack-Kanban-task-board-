@@ -17,20 +17,21 @@ public class TaskService {
         this.taskRepository = taskRepository;
     }
 
-    public List<Task> getAllTasks() {
-        return taskRepository.findAll();
+    public List<Task> getAllTasks(Long userId) {
+        return taskRepository.findByUserId(userId);
     }
 
-    public Optional<Task> getTaskById(Long id) {
-        return taskRepository.findById(id);
+    public Optional<Task> getTaskById(Long id, Long userId) {
+        return taskRepository.findByIdAndUserId(id, userId);
     }
 
-    public Task createTask(Task task) {
+    public Task createTask(Task task, Long userId) {
+        task.setUserId(userId);
         return taskRepository.save(task);
     }
 
-    public Optional<Task> updateTask(Long id, Task updatedTask) {
-        return taskRepository.findById(id).map(existing -> {
+    public Optional<Task> updateTask(Long id, Task updatedTask, Long userId) {
+        return taskRepository.findByIdAndUserId(id, userId).map(existing -> {
             existing.setTitle(updatedTask.getTitle());
             existing.setDescription(updatedTask.getDescription());
             existing.setStatus(updatedTask.getStatus());
@@ -39,11 +40,10 @@ public class TaskService {
         });
     }
 
-    public boolean deleteTask(Long id) {
-        if (taskRepository.existsById(id)) {
-            taskRepository.deleteById(id);
-            return true;
-        }
-        return false;
+    public boolean deleteTask(Long id, Long userId) {
+        return taskRepository.findByIdAndUserId(id, userId)
+                .map(task -> { taskRepository.delete(task); return true; })
+                .orElse(false);
     }
 }
+

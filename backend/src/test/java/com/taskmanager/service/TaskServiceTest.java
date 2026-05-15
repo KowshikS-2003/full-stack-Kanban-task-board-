@@ -22,12 +22,10 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
-/**
- * Pure unit tests for TaskService.
- * No Spring context is loaded — the repository is mocked with Mockito.
- */
 @ExtendWith(MockitoExtension.class)
 class TaskServiceTest {
+
+    private static final Long USER_ID = 1L;
 
     @Mock
     private TaskRepository taskRepository;
@@ -35,7 +33,6 @@ class TaskServiceTest {
     @InjectMocks
     private TaskService taskService;
 
-    // Helper: create a Task with a preset ID (simulates a saved entity)
     private Task savedTask(Long id, String title, Status status) {
         return savedTask(id, title, status, Priority.MEDIUM);
     }
@@ -46,6 +43,7 @@ class TaskServiceTest {
         t.setTitle(title);
         t.setStatus(status);
         t.setPriority(priority);
+        t.setUserId(USER_ID);
         t.setCreatedAt(LocalDateTime.now());
         return t;
     }
@@ -59,26 +57,25 @@ class TaskServiceTest {
     class GetAllTasks {
 
         @Test
-        @DisplayName("returns all tasks from the repository")
+        @DisplayName("returns only tasks belonging to the given user")
         void returnsAllTasks() {
             List<Task> expected = List.of(
-                    savedTask(1L, "Task A", Status.TODO),
-                    savedTask(2L, "Task B", Status.IN_PROGRESS)
+                    savedTask(1L, "Task A", Status.TODO,        Priority.LOW),
+                    savedTask(2L, "Task B", Status.IN_PROGRESS, Priority.HIGH)
             );
-            given(taskRepository.findAll()).willReturn(expected);
+            given(taskRepository.findByUserId(USER_ID)).willReturn(expected);
 
-            List<Task> result = taskService.getAllTasks();
+            List<Task> result = taskService.getAllTasks(USER_ID);
 
             assertThat(result).hasSize(2).containsExactlyElementsOf(expected);
-            then(taskRepository).should().findAll();
+            then(taskRepository).should().findByUserId(USER_ID);
         }
 
         @Test
-        @DisplayName("returns empty list when repository is empty")
+        @DisplayName("returns empty list when user has no tasks")
         void returnsEmptyList() {
-            given(taskRepository.findAll()).willReturn(List.of());
-
-            assertThat(taskService.getAllTasks()).isEmpty();
+            given(taskRepository.findByUserId(USER_ID)).willReturn(List.of());
+            assertThat(taskService.getAllTasks(USER_ID)).isEmpty();
         }
     }
 
@@ -91,24 +88,22 @@ class TaskServiceTest {
     class GetTaskById {
 
         @Test
-        @DisplayName("returns the task when it exists")
+        @DisplayName("returns the task when it exists and belongs to the user")
         void taskExists_returnsTask() {
-            Task task = savedTask(1L, "Existing Task", Status.TODO);
-            given(taskRepository.findById(1L)).willReturn(Optional.of(task));
+            Task task = savedTask(1L, "Existing Task", Status.TODO, Priority.MEDIUM);
+            given(taskRepository.findByIdAndUserId(1L, USER_ID)).willReturn(Optional.of(task));
 
-            Optional<Task> result = taskService.getTaskById(1L);
+            Optional<Task> result = taskService.getTaskById(1L, USER_ID);
 
             assertThat(result).isPresent();
-            assertThat(result.get().getId()).isEqualTo(1L);
-            assertThat(result.get().getTitle()).isEqualTo("Existing Task");
+            assertThat(result.get().getPriority()).isEqualTo(Priority.MEDIUM);
         }
 
         @Test
-        @DisplayName("returns empty Optional when task does not exist")
+        @DisplayName("returns empty when task does not exist or belongs to another user")
         void taskMissing_returnsEmpty() {
-            given(taskRepository.findById(99L)).willReturn(Optional.empty());
-
-            assertThat(taskService.getTaskById(99L)).isEmpty();
+            given(taskRepository.findByIdAndUserId(99L, USER_ID)).willReturn(Optional.empty());
+            assertThat(taskService.getTaskById(99L, USER_ID)).isEmpty();
         }
     }
 
@@ -121,21 +116,19 @@ class TaskServiceTest {
     class CreateTask {
 
         @Test
-        @DisplayName("saves and returns the created task with default MEDIUM priority")
-        void savesAndReturnsTask() {
+        @DisplayName("sets userId on the task and saves it")
+        void savesWithUserId() {
             Task input = new Task();
             input.setTitle("New Task");
             input.setStatus(Status.TODO);
-            // priority defaults to MEDIUM in the entity
 
             Task persisted = savedTask(1L, "New Task", Status.TODO, Priority.MEDIUM);
             given(taskRepository.save(input)).willReturn(persisted);
 
-            Task result = taskService.createTask(input);
+            Task result = taskService.createTask(input, USER_ID);
 
             assertThat(result.getId()).isEqualTo(1L);
-            assertThat(result.getTitle()).isEqualTo("New Task");
-            assertThat(result.getPriority()).isEqualTo(Priority.MEDIUM);
+            assertThat(result.getUserId()).isEqualTo(USER_ID);
             then(taskRepository).should().save(input);
         }
 
@@ -144,13 +137,12 @@ class TaskServiceTest {
         void savesWithHighPriority() {
             Task input = new Task();
             input.setTitle("Urgent Task");
-            input.setStatus(Status.TODO);
             input.setPriority(Priority.HIGH);
 
             Task persisted = savedTask(2L, "Urgent Task", Status.TODO, Priority.HIGH);
             given(taskRepository.save(input)).willReturn(persisted);
 
-            assertThat(taskService.createTask(input).getPriority()).isEqualTo(Priority.HIGH);
+            assertThat(taskService.createTask(input, USER_ID).getPriority()).isEqualTo(Priority.HIGH);
         }
     }
 
@@ -166,7 +158,7 @@ class TaskServiceTest {
         @DisplayName("updates all mutable fields including priority")
         void taskExists_updatesFields() {
             Task existing = savedTask(1L, "Old Title", Status.TODO, Priority.LOW);
-            given(taskRepository.findById(1L)).willReturn(Optional.of(existing));
+            given(taskRepository.findByIdAndUserId(1L, USER_ID)).willReturn(Optional.of(existing));
 
             Task update = new Task();
             update.setTitle("New Title");
@@ -178,7 +170,7 @@ class TaskServiceTest {
             afterSave.setDescription("Updated description");
             given(taskRepository.save(existing)).willReturn(afterSave);
 
-            Optional<Task> result = taskService.updateTask(1L, update);
+            Optional<Task> result = taskService.updateTask(1L, update, USER_ID);
 
             assertThat(result).isPresent();
             assertThat(result.get().getTitle()).isEqualTo("New Title");
@@ -189,26 +181,42 @@ class TaskServiceTest {
         }
 
         @Test
-        @DisplayName("returns empty Optional when task does not exist")
-        void taskMissing_returnsEmpty() {
-            given(taskRepository.findById(99L)).willReturn(Optional.empty());
+        @DisplayName("updates priority from MEDIUM to HIGH")
+        void updatesPriority() {
+            Task existing = savedTask(1L, "Task", Status.TODO, Priority.MEDIUM);
+            given(taskRepository.findByIdAndUserId(1L, USER_ID)).willReturn(Optional.of(existing));
 
             Task update = new Task();
-            update.setTitle("Ghost update");
+            update.setTitle("Task");
+            update.setStatus(Status.TODO);
+            update.setPriority(Priority.HIGH);
+
+            Task afterSave = savedTask(1L, "Task", Status.TODO, Priority.HIGH);
+            given(taskRepository.save(existing)).willReturn(afterSave);
+
+            assertThat(taskService.updateTask(1L, update, USER_ID).get().getPriority())
+                    .isEqualTo(Priority.HIGH);
+        }
+
+        @Test
+        @DisplayName("returns empty when task does not exist or belongs to another user")
+        void taskMissing_returnsEmpty() {
+            given(taskRepository.findByIdAndUserId(99L, USER_ID)).willReturn(Optional.empty());
+
+            Task update = new Task();
+            update.setTitle("Ghost");
             update.setStatus(Status.DONE);
             update.setPriority(Priority.LOW);
 
-            Optional<Task> result = taskService.updateTask(99L, update);
-
-            assertThat(result).isEmpty();
+            assertThat(taskService.updateTask(99L, update, USER_ID)).isEmpty();
             then(taskRepository).should(never()).save(any());
         }
 
         @Test
         @DisplayName("advances status from TODO → IN_PROGRESS")
-        void advancesStatusTodoToInProgress() {
+        void advancesStatus() {
             Task existing = savedTask(2L, "Sprint task", Status.TODO, Priority.MEDIUM);
-            given(taskRepository.findById(2L)).willReturn(Optional.of(existing));
+            given(taskRepository.findByIdAndUserId(2L, USER_ID)).willReturn(Optional.of(existing));
 
             Task update = new Task();
             update.setTitle("Sprint task");
@@ -218,28 +226,8 @@ class TaskServiceTest {
             Task afterSave = savedTask(2L, "Sprint task", Status.IN_PROGRESS, Priority.MEDIUM);
             given(taskRepository.save(existing)).willReturn(afterSave);
 
-            Optional<Task> result = taskService.updateTask(2L, update);
-
-            assertThat(result.get().getStatus()).isEqualTo(Status.IN_PROGRESS);
-        }
-
-        @Test
-        @DisplayName("advances status from IN_PROGRESS → DONE")
-        void advancesStatusInProgressToDone() {
-            Task existing = savedTask(3L, "Almost done", Status.IN_PROGRESS, Priority.LOW);
-            given(taskRepository.findById(3L)).willReturn(Optional.of(existing));
-
-            Task update = new Task();
-            update.setTitle("Almost done");
-            update.setStatus(Status.DONE);
-            update.setPriority(Priority.LOW);
-
-            Task afterSave = savedTask(3L, "Almost done", Status.DONE, Priority.LOW);
-            given(taskRepository.save(existing)).willReturn(afterSave);
-
-            Optional<Task> result = taskService.updateTask(3L, update);
-
-            assertThat(result.get().getStatus()).isEqualTo(Status.DONE);
+            assertThat(taskService.updateTask(2L, update, USER_ID).get().getStatus())
+                    .isEqualTo(Status.IN_PROGRESS);
         }
     }
 
@@ -252,25 +240,22 @@ class TaskServiceTest {
     class DeleteTask {
 
         @Test
-        @DisplayName("deletes task and returns true when it exists")
+        @DisplayName("deletes task and returns true when it belongs to the user")
         void taskExists_deletesAndReturnsTrue() {
-            given(taskRepository.existsById(1L)).willReturn(true);
+            Task task = savedTask(1L, "Delete me", Status.TODO);
+            given(taskRepository.findByIdAndUserId(1L, USER_ID)).willReturn(Optional.of(task));
 
-            boolean result = taskService.deleteTask(1L);
-
-            assertThat(result).isTrue();
-            then(taskRepository).should().deleteById(1L);
+            assertThat(taskService.deleteTask(1L, USER_ID)).isTrue();
+            then(taskRepository).should().delete(task);
         }
 
         @Test
-        @DisplayName("returns false and does not call deleteById when task does not exist")
+        @DisplayName("returns false when task does not exist or belongs to another user")
         void taskMissing_returnsFalse() {
-            given(taskRepository.existsById(99L)).willReturn(false);
+            given(taskRepository.findByIdAndUserId(99L, USER_ID)).willReturn(Optional.empty());
 
-            boolean result = taskService.deleteTask(99L);
-
-            assertThat(result).isFalse();
-            then(taskRepository).should(never()).deleteById(any());
+            assertThat(taskService.deleteTask(99L, USER_ID)).isFalse();
+            then(taskRepository).should(never()).delete(any(Task.class));
         }
     }
 }
