@@ -88,9 +88,11 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute short commit SHA
+      - name: Compute short SHA and lowercase owner
         id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       # Build the backend image and push two tags:
       #   :latest          — always overwritten (used by docker-compose.prod.yml)
@@ -102,8 +104,8 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/quicktask-backend:latest
-            ghcr.io/${{ github.repository_owner }}/quicktask-backend:${{ steps.vars.outputs.sha_short }}
+            ghcr.io/${{ steps.vars.outputs.owner }}/quicktask-backend:latest
+            ghcr.io/${{ steps.vars.outputs.owner }}/quicktask-backend:${{ steps.vars.outputs.sha_short }}
           labels: |
             org.opencontainers.image.title=QuickTask Backend
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -117,8 +119,8 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/quicktask-frontend:latest
-            ghcr.io/${{ github.repository_owner }}/quicktask-frontend:${{ steps.vars.outputs.sha_short }}
+            ghcr.io/${{ steps.vars.outputs.owner }}/quicktask-frontend:latest
+            ghcr.io/${{ steps.vars.outputs.owner }}/quicktask-frontend:${{ steps.vars.outputs.sha_short }}
           labels: |
             org.opencontainers.image.title=QuickTask Frontend
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -133,7 +135,7 @@ jobs:
             --env DB_USERNAME=dummyuser \
             --env DB_PASSWORD=dummypass \
             --env SPRING_JPA_HIBERNATE_DDL_AUTO=none \
-            ghcr.io/${{ github.repository_owner }}/quicktask-backend:latest
+            ghcr.io/${{ steps.vars.outputs.owner }}/quicktask-backend:latest
           sleep 12
           docker stop quicktask-smoke 2>/dev/null || true
           echo "Smoke test passed — JVM started without immediate crash."
@@ -142,11 +144,11 @@ jobs:
         run: |
           echo ""
           echo "Images published to GitHub Container Registry:"
-          echo "  ghcr.io/${{ github.repository_owner }}/quicktask-backend:latest"
-          echo "  ghcr.io/${{ github.repository_owner }}/quicktask-backend:${{ steps.vars.outputs.sha_short }}"
-          echo "  ghcr.io/${{ github.repository_owner }}/quicktask-frontend:latest"
-          echo "  ghcr.io/${{ github.repository_owner }}/quicktask-frontend:${{ steps.vars.outputs.sha_short }}"
+          echo "  ghcr.io/${{ steps.vars.outputs.owner }}/quicktask-backend:latest"
+          echo "  ghcr.io/${{ steps.vars.outputs.owner }}/quicktask-backend:${{ steps.vars.outputs.sha_short }}"
+          echo "  ghcr.io/${{ steps.vars.outputs.owner }}/quicktask-frontend:latest"
+          echo "  ghcr.io/${{ steps.vars.outputs.owner }}/quicktask-frontend:${{ steps.vars.outputs.sha_short }}"
           echo ""
           echo "Run locally with Podman Desktop:"
-          echo "  cp .env.example .env   # set GITHUB_OWNER=${{ github.repository_owner }}"
+          echo "  cp .env.example .env   # set GITHUB_OWNER=${{ steps.vars.outputs.owner }}"
           echo "  podman-compose -f docker-compose.prod.yml up"
