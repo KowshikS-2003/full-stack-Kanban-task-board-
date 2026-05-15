@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuickTask — Kanban Board</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+    <!-- ===== App Header ===== -->
+    <header class="app-header">
+        <div class="header-inner">
+            <h1>&#9889; QuickTask</h1>
+            <button id="btn-add-task" class="btn-primary">+ New Task</button>
+        </div>
+    </header>
+
+    <!-- ===== Error Banner ===== -->
+    <div id="error-banner" class="error-banner" hidden role="alert"></div>
+
+    <!-- ===== Kanban Board ===== -->
+    <main id="board" class="board">
+
+        <!-- To Do -->
+        <section class="column column-todo">
+            <div class="column-header">
+                <h2>To Do</h2>
+                <span id="count-TODO" class="task-count">0</span>
+            </div>
+            <div id="list-TODO" class="task-list"></div>
+        </section>
+
+        <!-- In Progress -->
+        <section class="column column-inprogress">
+            <div class="column-header">
+                <h2>In Progress</h2>
+                <span id="count-IN_PROGRESS" class="task-count">0</span>
+            </div>
+            <div id="list-IN_PROGRESS" class="task-list"></div>
+        </section>
+
+        <!-- Done -->
+        <section class="column column-done">
+            <div class="column-header">
+                <h2>Done</h2>
+                <span id="count-DONE" class="task-count">0</span>
+            </div>
+            <div id="list-DONE" class="task-list"></div>
+        </section>
+
+    </main>
+
+    <!-- ===== New Task Modal ===== -->
+    <div id="task-modal" class="modal-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">New Task</h2>
+                <button id="btn-close-modal" class="btn-icon" aria-label="Close modal">&#x2715;</button>
+            </div>
+            <form id="new-task-form" novalidate>
+                <div class="form-group">
+                    <label for="task-title">Title <span class="required" aria-hidden="true">*</span></label>
+                    <input
+                        type="text"
+                        id="task-title"
+                        name="title"
+                        required
+                        maxlength="200"
+                        placeholder="Enter a task title…"
+                        autocomplete="off"
+                    />
+                </div>
+                <div class="form-group">
+                    <label for="task-desc">Description <span class="optional">(optional)</span></label>
+                    <textarea
+                        id="task-desc"
+                        name="description"
+                        rows="3"
+                        maxlength="1000"
+                        placeholder="Add more context…"
+                    ></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="btn-cancel" class="btn-secondary">Cancel</button>
+                    <button type="submit" class="btn-primary">Create Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# -------------------------------------------------------
+# QuickTask — .gitignore
+# -------------------------------------------------------
+
+# Environment / secrets — NEVER commit .env
+.env
+
+# Maven build output
+backend/target/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Podman / Docker
+*.log
