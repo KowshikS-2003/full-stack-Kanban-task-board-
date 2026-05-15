@@ -1,9 +1,9 @@
 package com.taskmanager.service;
 
 import com.taskmanager.entity.Task;
+import com.taskmanager.entity.Task.Priority;
 import com.taskmanager.entity.Task.Status;
 import com.taskmanager.repository.TaskRepository;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -37,10 +37,15 @@ class TaskServiceTest {
 
     // Helper: create a Task with a preset ID (simulates a saved entity)
     private Task savedTask(Long id, String title, Status status) {
+        return savedTask(id, title, status, Priority.MEDIUM);
+    }
+
+    private Task savedTask(Long id, String title, Status status, Priority priority) {
         Task t = new Task();
         t.setId(id);
         t.setTitle(title);
         t.setStatus(status);
+        t.setPriority(priority);
         t.setCreatedAt(LocalDateTime.now());
         return t;
     }
@@ -116,35 +121,36 @@ class TaskServiceTest {
     class CreateTask {
 
         @Test
-        @DisplayName("saves and returns the created task")
+        @DisplayName("saves and returns the created task with default MEDIUM priority")
         void savesAndReturnsTask() {
             Task input = new Task();
             input.setTitle("New Task");
             input.setStatus(Status.TODO);
+            // priority defaults to MEDIUM in the entity
 
-            Task persisted = savedTask(1L, "New Task", Status.TODO);
+            Task persisted = savedTask(1L, "New Task", Status.TODO, Priority.MEDIUM);
             given(taskRepository.save(input)).willReturn(persisted);
 
             Task result = taskService.createTask(input);
 
             assertThat(result.getId()).isEqualTo(1L);
             assertThat(result.getTitle()).isEqualTo("New Task");
+            assertThat(result.getPriority()).isEqualTo(Priority.MEDIUM);
             then(taskRepository).should().save(input);
         }
 
         @Test
-        @DisplayName("defaults status to TODO when not specified")
-        void defaultStatusIsTodo() {
+        @DisplayName("saves task with HIGH priority when explicitly set")
+        void savesWithHighPriority() {
             Task input = new Task();
-            input.setTitle("No-status task");
-            // status defaults to TODO in the entity
+            input.setTitle("Urgent Task");
+            input.setStatus(Status.TODO);
+            input.setPriority(Priority.HIGH);
 
-            Task persisted = savedTask(5L, "No-status task", Status.TODO);
+            Task persisted = savedTask(2L, "Urgent Task", Status.TODO, Priority.HIGH);
             given(taskRepository.save(input)).willReturn(persisted);
 
-            Task result = taskService.createTask(input);
-
-            assertThat(result.getStatus()).isEqualTo(Status.TODO);
+            assertThat(taskService.createTask(input).getPriority()).isEqualTo(Priority.HIGH);
         }
     }
 
@@ -157,17 +163,18 @@ class TaskServiceTest {
     class UpdateTask {
 
         @Test
-        @DisplayName("updates all mutable fields and returns the updated task")
+        @DisplayName("updates all mutable fields including priority")
         void taskExists_updatesFields() {
-            Task existing = savedTask(1L, "Old Title", Status.TODO);
+            Task existing = savedTask(1L, "Old Title", Status.TODO, Priority.LOW);
             given(taskRepository.findById(1L)).willReturn(Optional.of(existing));
 
             Task update = new Task();
             update.setTitle("New Title");
             update.setDescription("Updated description");
             update.setStatus(Status.IN_PROGRESS);
+            update.setPriority(Priority.HIGH);
 
-            Task afterSave = savedTask(1L, "New Title", Status.IN_PROGRESS);
+            Task afterSave = savedTask(1L, "New Title", Status.IN_PROGRESS, Priority.HIGH);
             afterSave.setDescription("Updated description");
             given(taskRepository.save(existing)).willReturn(afterSave);
 
@@ -177,6 +184,7 @@ class TaskServiceTest {
             assertThat(result.get().getTitle()).isEqualTo("New Title");
             assertThat(result.get().getDescription()).isEqualTo("Updated description");
             assertThat(result.get().getStatus()).isEqualTo(Status.IN_PROGRESS);
+            assertThat(result.get().getPriority()).isEqualTo(Priority.HIGH);
             then(taskRepository).should().save(existing);
         }
 
@@ -188,6 +196,7 @@ class TaskServiceTest {
             Task update = new Task();
             update.setTitle("Ghost update");
             update.setStatus(Status.DONE);
+            update.setPriority(Priority.LOW);
 
             Optional<Task> result = taskService.updateTask(99L, update);
 
@@ -198,14 +207,15 @@ class TaskServiceTest {
         @Test
         @DisplayName("advances status from TODO → IN_PROGRESS")
         void advancesStatusTodoToInProgress() {
-            Task existing = savedTask(2L, "Sprint task", Status.TODO);
+            Task existing = savedTask(2L, "Sprint task", Status.TODO, Priority.MEDIUM);
             given(taskRepository.findById(2L)).willReturn(Optional.of(existing));
 
             Task update = new Task();
             update.setTitle("Sprint task");
             update.setStatus(Status.IN_PROGRESS);
+            update.setPriority(Priority.MEDIUM);
 
-            Task afterSave = savedTask(2L, "Sprint task", Status.IN_PROGRESS);
+            Task afterSave = savedTask(2L, "Sprint task", Status.IN_PROGRESS, Priority.MEDIUM);
             given(taskRepository.save(existing)).willReturn(afterSave);
 
             Optional<Task> result = taskService.updateTask(2L, update);
@@ -216,14 +226,15 @@ class TaskServiceTest {
         @Test
         @DisplayName("advances status from IN_PROGRESS → DONE")
         void advancesStatusInProgressToDone() {
-            Task existing = savedTask(3L, "Almost done", Status.IN_PROGRESS);
+            Task existing = savedTask(3L, "Almost done", Status.IN_PROGRESS, Priority.LOW);
             given(taskRepository.findById(3L)).willReturn(Optional.of(existing));
 
             Task update = new Task();
             update.setTitle("Almost done");
             update.setStatus(Status.DONE);
+            update.setPriority(Priority.LOW);
 
-            Task afterSave = savedTask(3L, "Almost done", Status.DONE);
+            Task afterSave = savedTask(3L, "Almost done", Status.DONE, Priority.LOW);
             given(taskRepository.save(existing)).willReturn(afterSave);
 
             Optional<Task> result = taskService.updateTask(3L, update);

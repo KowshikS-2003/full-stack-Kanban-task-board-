@@ -1,6 +1,7 @@
 package com.taskmanager.repository;
 
 import com.taskmanager.entity.Task;
+import com.taskmanager.entity.Task.Priority;
 import com.taskmanager.entity.Task.Status;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,10 +34,15 @@ class TaskRepositoryTest {
 
     // Helper: persist a Task and flush to DB immediately
     private Task persist(String title, String description, Status status) {
+        return persist(title, description, status, Priority.MEDIUM);
+    }
+
+    private Task persist(String title, String description, Status status, Priority priority) {
         Task t = new Task();
         t.setTitle(title);
         t.setDescription(description);
         t.setStatus(status);
+        t.setPriority(priority);
         return entityManager.persistFlushFind(t);
     }
 
@@ -60,6 +66,7 @@ class TaskRepositoryTest {
             Task task = new Task();
             task.setTitle("Persist me");
             task.setStatus(Status.TODO);
+            task.setPriority(Priority.HIGH);
 
             Task saved = taskRepository.save(task);
             entityManager.flush();
@@ -69,6 +76,7 @@ class TaskRepositoryTest {
             assertThat(found).isPresent();
             assertThat(found.get().getTitle()).isEqualTo("Persist me");
             assertThat(found.get().getStatus()).isEqualTo(Status.TODO);
+            assertThat(found.get().getPriority()).isEqualTo(Priority.HIGH);
         }
 
         @Test
@@ -193,11 +201,12 @@ class TaskRepositoryTest {
         @Test
         @DisplayName("updates title and status of an existing task")
         void updatesTitleAndStatus() {
-            Task saved = persist("Original title", null, Status.TODO);
+            Task saved = persist("Original title", null, Status.TODO, Priority.LOW);
 
             Task toUpdate = taskRepository.findById(saved.getId()).orElseThrow();
             toUpdate.setTitle("Updated title");
             toUpdate.setStatus(Status.IN_PROGRESS);
+            toUpdate.setPriority(Priority.HIGH);
             taskRepository.save(toUpdate);
             entityManager.flush();
             entityManager.clear();
@@ -205,6 +214,7 @@ class TaskRepositoryTest {
             Task reloaded = taskRepository.findById(saved.getId()).orElseThrow();
             assertThat(reloaded.getTitle()).isEqualTo("Updated title");
             assertThat(reloaded.getStatus()).isEqualTo(Status.IN_PROGRESS);
+            assertThat(reloaded.getPriority()).isEqualTo(Priority.HIGH);
         }
 
         @Test
@@ -219,6 +229,83 @@ class TaskRepositoryTest {
             entityManager.flush();
 
             assertThat(taskRepository.count()).isEqualTo(before);
+        }
+    }
+
+    // -------------------------------------------------------
+    // findByPriority (custom query)
+    // -------------------------------------------------------
+
+    @Nested
+    @DisplayName("findByPriority()")
+    class FindByPriority {
+
+        @Test
+        @DisplayName("returns only tasks with the given priority")
+        void returnsOnlyMatchingPriority() {
+            persist("High 1",   null, Status.TODO,        Priority.HIGH);
+            persist("High 2",   null, Status.IN_PROGRESS, Priority.HIGH);
+            persist("Medium 1", null, Status.TODO,        Priority.MEDIUM);
+            persist("Low 1",    null, Status.DONE,        Priority.LOW);
+
+            List<Task> highs = taskRepository.findByPriority(Priority.HIGH);
+
+            assertThat(highs).hasSize(2)
+                    .allMatch(t -> t.getPriority() == Priority.HIGH);
+        }
+
+        @Test
+        @DisplayName("returns empty list when no tasks match the given priority")
+        void returnsEmptyWhenNoMatch() {
+            persist("Medium task", null, Status.TODO, Priority.MEDIUM);
+
+            assertThat(taskRepository.findByPriority(Priority.LOW)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("returns correct counts for all priority levels")
+        void returnsCorrectCountsForAllPriorities() {
+            persist("L1", null, Status.TODO, Priority.LOW);
+            persist("L2", null, Status.TODO, Priority.LOW);
+            persist("M1", null, Status.TODO, Priority.MEDIUM);
+            persist("H1", null, Status.TODO, Priority.HIGH);
+            persist("H2", null, Status.DONE, Priority.HIGH);
+            persist("H3", null, Status.DONE, Priority.HIGH);
+
+            assertThat(taskRepository.findByPriority(Priority.LOW)).hasSize(2);
+            assertThat(taskRepository.findByPriority(Priority.MEDIUM)).hasSize(1);
+            assertThat(taskRepository.findByPriority(Priority.HIGH)).hasSize(3);
+        }
+    }
+
+    // -------------------------------------------------------
+    // findByStatusAndPriority (custom query)
+    // -------------------------------------------------------
+
+    @Nested
+    @DisplayName("findByStatusAndPriority()")
+    class FindByStatusAndPriority {
+
+        @Test
+        @DisplayName("returns tasks matching both status and priority")
+        void returnsOnlyExactMatch() {
+            persist("Match",    null, Status.TODO, Priority.HIGH);
+            persist("Wrong S",  null, Status.DONE, Priority.HIGH);
+            persist("Wrong P",  null, Status.TODO, Priority.LOW);
+            persist("Neither",  null, Status.DONE, Priority.LOW);
+
+            List<Task> result = taskRepository.findByStatusAndPriority(Status.TODO, Priority.HIGH);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getTitle()).isEqualTo("Match");
+        }
+
+        @Test
+        @DisplayName("returns empty list when no tasks match both criteria")
+        void returnsEmptyWhenNoMatch() {
+            persist("Only low-todo", null, Status.TODO, Priority.LOW);
+
+            assertThat(taskRepository.findByStatusAndPriority(Status.DONE, Priority.HIGH)).isEmpty();
         }
     }
 }

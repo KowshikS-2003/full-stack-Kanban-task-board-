@@ -20,6 +20,10 @@ public class Task {
         TODO, IN_PROGRESS, DONE
     }
 
+    public enum Priority {
+        LOW, MEDIUM, HIGH
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -33,6 +37,10 @@ public class Task {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Status status = Status.TODO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private Priority priority = Priority.MEDIUM;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -55,6 +63,9 @@ public class Task {
 
     public Status getStatus() { return status; }
     public void setStatus(Status status) { this.status = status; }
+
+    public Priority getPriority() { return priority; }
+    public void setPriority(Priority priority) { this.priority = priority; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

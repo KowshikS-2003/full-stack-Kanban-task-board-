@@ -34,6 +34,7 @@ public class TaskService {
             existing.setTitle(updatedTask.getTitle());
             existing.setDescription(updatedTask.getDescription());
             existing.setStatus(updatedTask.getStatus());
+            existing.setPriority(updatedTask.getPriority());
             return taskRepository.save(existing);
         });
     }

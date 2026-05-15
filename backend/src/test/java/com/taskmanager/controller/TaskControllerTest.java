@@ -2,6 +2,7 @@ package com.taskmanager.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.taskmanager.entity.Task;
+import com.taskmanager.entity.Task.Priority;
 import com.taskmanager.entity.Task.Status;
 import com.taskmanager.service.TaskService;
 import org.junit.jupiter.api.DisplayName;
@@ -44,11 +45,16 @@ class TaskControllerTest {
 
     // Helper: build a populated Task (simulates a persisted entity)
     private Task task(Long id, String title, String description, Status status) {
+        return task(id, title, description, status, Priority.MEDIUM);
+    }
+
+    private Task task(Long id, String title, String description, Status status, Priority priority) {
         Task t = new Task();
         t.setId(id);
         t.setTitle(title);
         t.setDescription(description);
         t.setStatus(status);
+        t.setPriority(priority);
         t.setCreatedAt(LocalDateTime.of(2026, 1, 1, 9, 0));
         return t;
     }
@@ -65,19 +71,21 @@ class TaskControllerTest {
         @DisplayName("returns 200 with a JSON array of tasks")
         void returns200WithTaskList() throws Exception {
             given(taskService.getAllTasks()).willReturn(List.of(
-                    task(1L, "Task A", null,      Status.TODO),
-                    task(2L, "Task B", "details", Status.IN_PROGRESS)
+                    task(1L, "Task A", null,      Status.TODO,        Priority.LOW),
+                    task(2L, "Task B", "details", Status.IN_PROGRESS, Priority.HIGH)
             ));
 
             mockMvc.perform(get("/api/tasks"))
                     .andExpect(status().isOk())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$", hasSize(2)))
-                    .andExpect(jsonPath("$[0].id",     is(1)))
-                    .andExpect(jsonPath("$[0].title",  is("Task A")))
-                    .andExpect(jsonPath("$[0].status", is("TODO")))
-                    .andExpect(jsonPath("$[1].id",     is(2)))
-                    .andExpect(jsonPath("$[1].status", is("IN_PROGRESS")));
+                    .andExpect(jsonPath("$[0].id",       is(1)))
+                    .andExpect(jsonPath("$[0].title",    is("Task A")))
+                    .andExpect(jsonPath("$[0].status",   is("TODO")))
+                    .andExpect(jsonPath("$[0].priority", is("LOW")))
+                    .andExpect(jsonPath("$[1].id",       is(2)))
+                    .andExpect(jsonPath("$[1].status",   is("IN_PROGRESS")))
+                    .andExpect(jsonPath("$[1].priority", is("HIGH")));
         }
 
         @Test
@@ -103,14 +111,15 @@ class TaskControllerTest {
         @DisplayName("returns 200 with the task when it exists")
         void taskExists_returns200() throws Exception {
             given(taskService.getTaskById(1L))
-                    .willReturn(Optional.of(task(1L, "Found it", "desc", Status.DONE)));
+                    .willReturn(Optional.of(task(1L, "Found it", "desc", Status.DONE, Priority.HIGH)));
 
             mockMvc.perform(get("/api/tasks/1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id",          is(1)))
                     .andExpect(jsonPath("$.title",       is("Found it")))
                     .andExpect(jsonPath("$.description", is("desc")))
-                    .andExpect(jsonPath("$.status",      is("DONE")));
+                    .andExpect(jsonPath("$.status",      is("DONE")))
+                    .andExpect(jsonPath("$.priority",    is("HIGH")));
         }
 
         @Test
@@ -134,17 +143,18 @@ class TaskControllerTest {
         @Test
         @DisplayName("returns 201 with the created task body")
         void returns201WithCreatedTask() throws Exception {
-            Task input   = task(null, "New Task", "desc", Status.TODO);
-            Task created = task(5L,   "New Task", "desc", Status.TODO);
+            Task input   = task(null, "New Task", "desc", Status.TODO, Priority.MEDIUM);
+            Task created = task(5L,   "New Task", "desc", Status.TODO, Priority.MEDIUM);
             given(taskService.createTask(any(Task.class))).willReturn(created);
 
             mockMvc.perform(post("/api/tasks")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(input)))
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.id",     is(5)))
-                    .andExpect(jsonPath("$.title",  is("New Task")))
-                    .andExpect(jsonPath("$.status", is("TODO")));
+                    .andExpect(jsonPath("$.id",       is(5)))
+                    .andExpect(jsonPath("$.title",    is("New Task")))
+                    .andExpect(jsonPath("$.status",   is("TODO")))
+                    .andExpect(jsonPath("$.priority", is("MEDIUM")));
 
             then(taskService).should().createTask(any(Task.class));
         }
@@ -161,8 +171,8 @@ class TaskControllerTest {
         @Test
         @DisplayName("returns 200 with the updated task when it exists")
         void taskExists_returns200() throws Exception {
-            Task update  = task(null, "Updated", "new desc", Status.IN_PROGRESS);
-            Task updated = task(1L,   "Updated", "new desc", Status.IN_PROGRESS);
+            Task update  = task(null, "Updated", "new desc", Status.IN_PROGRESS, Priority.HIGH);
+            Task updated = task(1L,   "Updated", "new desc", Status.IN_PROGRESS, Priority.HIGH);
             given(taskService.updateTask(eq(1L), any(Task.class)))
                     .willReturn(Optional.of(updated));
 
@@ -170,9 +180,10 @@ class TaskControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(update)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id",          is(1)))
-                    .andExpect(jsonPath("$.title",       is("Updated")))
-                    .andExpect(jsonPath("$.status",      is("IN_PROGRESS")));
+                    .andExpect(jsonPath("$.id",       is(1)))
+                    .andExpect(jsonPath("$.title",    is("Updated")))
+                    .andExpect(jsonPath("$.status",   is("IN_PROGRESS")))
+                    .andExpect(jsonPath("$.priority", is("HIGH")));
         }
 
         @Test
@@ -184,7 +195,7 @@ class TaskControllerTest {
             mockMvc.perform(put("/api/tasks/99")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(
-                                    task(null, "Ghost", null, Status.DONE))))
+                                    task(null, "Ghost", null, Status.DONE, Priority.LOW))))
                     .andExpect(status().isNotFound());
         }
     }

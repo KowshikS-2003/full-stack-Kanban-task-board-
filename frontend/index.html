@@ -12,6 +12,7 @@
     <header class="app-header">
         <div class="header-inner">
             <h1>&#9889; QuickTask</h1>
+            <input type="search" id="search-input" class="search-input" placeholder="&#128269; Search tasks…" autocomplete="off" />
             <button id="btn-add-task" class="btn-primary">+ New Task</button>
         </div>
     </header>
@@ -81,9 +82,17 @@
                         placeholder="Add more context…"
                     ></textarea>
                 </div>
+                <div class="form-group">
+                    <label for="task-priority">Priority</label>
+                    <select id="task-priority" name="priority">
+                        <option value="LOW">&#128994; Low</option>
+                        <option value="MEDIUM" selected>&#128993; Medium</option>
+                        <option value="HIGH">&#128308; High</option>
+                    </select>
+                </div>
                 <div class="form-actions">
                     <button type="button" id="btn-cancel" class="btn-secondary">Cancel</button>
-                    <button type="submit" class="btn-primary">Create Task</button>
+                    <button type="submit" id="btn-submit" class="btn-primary">Create Task</button>
                 </div>
             </form>
         </div>

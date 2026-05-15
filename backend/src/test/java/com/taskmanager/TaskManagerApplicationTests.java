@@ -30,15 +30,18 @@ class TaskManagerApplicationTests {
         task.setTitle("Write unit tests");
         task.setDescription("Cover the service layer");
         task.setStatus(Task.Status.TODO);
+        task.setPriority(Task.Priority.HIGH);
 
         Task saved = taskService.createTask(task);
 
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.getCreatedAt()).isNotNull();
+        assertThat(saved.getPriority()).isEqualTo(Task.Priority.HIGH);
 
         Optional<Task> found = taskService.getTaskById(saved.getId());
         assertThat(found).isPresent();
         assertThat(found.get().getTitle()).isEqualTo("Write unit tests");
+        assertThat(found.get().getPriority()).isEqualTo(Task.Priority.HIGH);
     }
 
     @Test
@@ -57,17 +60,20 @@ class TaskManagerApplicationTests {
         Task task = new Task();
         task.setTitle("Move me forward");
         task.setStatus(Task.Status.TODO);
+        task.setPriority(Task.Priority.LOW);
         Task saved = taskService.createTask(task);
 
         Task patch = new Task();
         patch.setTitle(saved.getTitle());
         patch.setDescription(saved.getDescription());
         patch.setStatus(Task.Status.IN_PROGRESS);
+        patch.setPriority(Task.Priority.HIGH);
 
         Optional<Task> updated = taskService.updateTask(saved.getId(), patch);
 
         assertThat(updated).isPresent();
         assertThat(updated.get().getStatus()).isEqualTo(Task.Status.IN_PROGRESS);
+        assertThat(updated.get().getPriority()).isEqualTo(Task.Priority.HIGH);
     }
 
     @Test
